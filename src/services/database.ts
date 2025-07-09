@@ -285,6 +285,136 @@ export class DatabaseService {
     }
   }
 
+  async batchCreateProposals(spaceId: string, proposals: SnapshotProposal[]): Promise<{ created: number; updated: number; skipped: number }> {
+    console.log(`📦 Starting batch import of ${proposals.length} proposals for space: ${spaceId}`);
+    
+    let created = 0;
+    let updated = 0;
+    let skipped = 0;
+    
+    // Get space info
+    const space = await this.getSpaceById(spaceId);
+    if (!space) {
+      throw new Error(`Space ${spaceId} not found`);
+    }
+
+    // Process proposals in smaller batches to avoid overwhelming the database
+    const batchSize = 50;
+    for (let i = 0; i < proposals.length; i += batchSize) {
+      const batch = proposals.slice(i, i + batchSize);
+      console.log(`📋 Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(proposals.length / batchSize)} (${batch.length} proposals)`);
+      
+      for (const proposal of batch) {
+        try {
+          // Check if proposal already exists
+          const existingProposal = await this.getProposalBySnapshotId(proposal.id);
+          
+                     if (existingProposal) {
+             // Update existing proposal with latest data
+             await this.updateProposal(proposal.id, {
+               title: proposal.title,
+               body: proposal.body,
+               state: proposal.state,
+               startTime: proposal.start,
+               endTime: proposal.end,
+               snapshotBlock: proposal.snapshot ? parseInt(proposal.snapshot) : undefined,
+               link: proposal.link,
+               choices: proposal.choices || [],
+               scores: proposal.scores || [],
+               scoresTotal: proposal.scores_total || 0,
+               votesCount: proposal.votes || 0,
+               processed: existingProposal.processed // Keep existing processed status
+             });
+             updated++;
+             console.log(`✅ Updated existing proposal: ${proposal.title.substring(0, 50)}...`);
+           } else {
+             // Create new proposal - mark as processed if it's not active/pending (historical)
+             const isHistorical = proposal.state !== 'active' && proposal.state !== 'pending';
+             
+             // Create the proposal first
+             const createdProposal = await this.createProposal(spaceId, proposal);
+             
+             // Mark as processed if it's historical (to avoid tweeting about old proposals)
+             if (isHistorical) {
+               await this.markProposalAsProcessed(proposal.id);
+             }
+             
+             created++;
+             console.log(`🆕 Created new proposal: ${proposal.title.substring(0, 50)}... (processed: ${isHistorical})`);
+           }
+        } catch (error) {
+          console.error(`❌ Error processing proposal ${proposal.id}:`, error);
+          skipped++;
+        }
+      }
+      
+      // Small delay between batches
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
+    console.log(`🎉 Batch import complete! Created: ${created}, Updated: ${updated}, Skipped: ${skipped}`);
+    return { created, updated, skipped };
+  }
+
+  async getExistingProposalIds(spaceId: string): Promise<Set<string>> {
+    // First get the space UUID from the space_id string
+    const space = await this.getSpaceById(spaceId);
+    if (!space) {
+      throw new Error(`Space ${spaceId} not found`);
+    }
+
+    const { data, error } = await this.supabase
+      .from('governance_snapshot_proposals')
+      .select('proposal_id')
+      .eq('space_id', space.id);
+
+    if (error) {
+      throw new Error(`Failed to fetch existing proposal IDs: ${error.message}`);
+    }
+
+    return new Set(data.map(item => item.proposal_id));
+  }
+
+  async getProposalStats(spaceId?: string): Promise<{
+    total: number;
+    processed: number;
+    unprocessed: number;
+    byState: Record<string, number>;
+  }> {
+    let query = this.supabase
+      .from('governance_snapshot_proposals')
+      .select('state, processed');
+
+    if (spaceId) {
+      // First get the space UUID from the space_id string
+      const space = await this.getSpaceById(spaceId);
+      if (!space) {
+        throw new Error(`Space ${spaceId} not found`);
+      }
+      query = query.eq('space_id', space.id);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw new Error(`Failed to fetch proposal stats: ${error.message}`);
+    }
+
+    const stats = {
+      total: data.length,
+      processed: data.filter(p => p.processed).length,
+      unprocessed: data.filter(p => !p.processed).length,
+      byState: {} as Record<string, number>
+    };
+
+    // Count by state
+    data.forEach(proposal => {
+      stats.byState[proposal.state] = (stats.byState[proposal.state] || 0) + 1;
+    });
+
+    return stats;
+  }
+
   // ===============================
   // TWEET LOGS MANAGEMENT
   // ===============================
@@ -402,6 +532,7 @@ export class DatabaseService {
         .from('governance_bot_status')
         .update({
           last_check_at: updates.lastCheckAt,
+          last_historical_import_at: updates.lastHistoricalImportAt,
           last_proposal_id: updates.lastProposalId,
           status: updates.status,
           error_message: updates.errorMessage,
@@ -424,6 +555,7 @@ export class DatabaseService {
         .insert([{
           space_id: space.id,
           last_check_at: updates.lastCheckAt || new Date().toISOString(),
+          last_historical_import_at: updates.lastHistoricalImportAt,
           last_proposal_id: updates.lastProposalId,
           status: updates.status || 'running',
           error_message: updates.errorMessage,
@@ -503,6 +635,7 @@ export class DatabaseService {
       id: data.id,
       spaceId: data.space_id,
       lastCheckAt: data.last_check_at,
+      lastHistoricalImportAt: data.last_historical_import_at,
       lastProposalId: data.last_proposal_id,
       status: data.status,
       errorMessage: data.error_message,

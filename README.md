@@ -86,6 +86,18 @@ npm start
 - `npm run dev` - Run in development mode with ts-node
 - `npm run watch` - Watch for changes and recompile
 
+### Historical Data Import
+
+Import all historical proposals from Snapshot spaces:
+
+```bash
+# Import all historical proposals for all active spaces
+npx ts-node src/import-historical-data.ts
+
+# Test historical import functionality
+npx ts-node src/test-historical-import.ts
+```
+
 ## Configuration
 
 ### Environment Variables
@@ -172,6 +184,7 @@ The bot runs several scheduled tasks:
 
 - **New Proposals**: Every 15 minutes (configurable)
 - **Active Proposals Check**: Every hour
+- **Daily Historical Import**: 2 AM UTC (only if needed - max once per day per space)
 - **Maintenance**: Every 6 hours
 - **Status Report**: Every 30 minutes
 
@@ -223,6 +236,47 @@ The bot supports monitoring multiple DAO spaces. To add new spaces:
 - bioDAO (bioxyz.eth)
 - CerebrumDAO (cerebrumdao.eth)
 - Any Snapshot space can be added
+
+## Historical Data Import
+
+The bot includes functionality to import all historical proposals from Snapshot spaces into the database for future analysis and reference.
+
+### Features
+
+- **📚 Complete History**: Imports all proposals from a space's inception
+- **🔄 Batch Processing**: Handles large datasets efficiently with pagination
+- **🎯 Smart Processing**: Only tweets about new active/pending proposals
+- **📊 Comprehensive Stats**: Provides detailed import statistics
+- **🔍 Duplicate Detection**: Avoids duplicates and updates existing proposals
+- **⏱️ Rate Limiting**: Respects Snapshot API limits during import
+- **🕐 Daily Automation**: Automatically runs once per day at 2 AM UTC (only if needed)
+- **🎯 Smart Scheduling**: Tracks last import time to avoid redundant operations
+
+### Usage
+
+```bash
+# Import all historical data for all active spaces (manual)
+npx ts-node src/import-historical-data.ts
+
+# Test daily historical import functionality with timing checks
+npx ts-node src/test-daily-historical-import.ts
+```
+
+### What Gets Imported
+
+- **All Proposals**: Every proposal from the space's history
+- **Complete Metadata**: Title, body, author, timestamps, voting data
+- **State Tracking**: Current state (active, closed, pending, etc.)
+- **Vote Counts**: Scores, total votes, and choice data
+- **Processing Status**: Historical proposals marked as processed (won't be tweeted)
+
+### Benefits
+
+- **📈 Analytics**: Complete governance history for analysis
+- **🔍 Research**: Historical voting patterns and proposal trends
+- **📊 Reporting**: Comprehensive governance activity tracking
+- **🎯 Context**: Understanding of past governance decisions
+- **📱 Future Features**: Foundation for advanced governance tools
 
 ## Troubleshooting
 

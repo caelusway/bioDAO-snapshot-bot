@@ -245,6 +245,141 @@ export class BioDAOBot {
     }
   }
 
+  async shouldRunHistoricalImport(): Promise<boolean> {
+    console.log('🔍 Checking if historical import should run...');
+    
+    try {
+      const spaces = await this.databaseService.getActiveSpaces();
+      const now = new Date();
+      const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      
+      // Check if any space needs historical import (hasn't been done in 24h)
+      for (const space of spaces) {
+        const botStatus = await this.databaseService.getBotStatus(space.spaceId);
+        
+        if (!botStatus?.lastHistoricalImportAt) {
+          console.log(`📚 Space ${space.name} has never had historical import`);
+          return true;
+        }
+        
+        const lastImport = new Date(botStatus.lastHistoricalImportAt);
+        if (lastImport < oneDayAgo) {
+          console.log(`📚 Space ${space.name} last imported ${Math.round((now.getTime() - lastImport.getTime()) / (1000 * 60 * 60))}h ago`);
+          return true;
+        }
+      }
+      
+      console.log('⏭️ All spaces have recent historical imports (within 24h)');
+      return false;
+      
+    } catch (error) {
+      console.error('❌ Error checking historical import status:', error);
+      return false;
+    }
+  }
+
+  async importHistoricalData(spaceId?: string): Promise<{
+    spaces: number;
+    created: number;
+    updated: number;
+    skipped: number;
+  }> {
+    console.log('📚 Starting historical data import...');
+    
+    try {
+      // Get spaces to process
+      let spaces: SpaceConfig[] = [];
+      if (spaceId) {
+        const space = await this.databaseService.getSpaceById(spaceId);
+        if (space) {
+          spaces = [space];
+        }
+      } else {
+        spaces = await this.databaseService.getActiveSpaces();
+      }
+      
+      if (spaces.length === 0) {
+        console.log('No spaces found for historical import');
+        return { spaces: 0, created: 0, updated: 0, skipped: 0 };
+      }
+
+      console.log(`Found ${spaces.length} spaces for historical import`);
+      
+      let totalResults = {
+        spaces: 0,
+        created: 0,
+        updated: 0,
+        skipped: 0
+      };
+
+      const now = new Date().toISOString();
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+      // Process each space
+      for (const space of spaces) {
+        try {
+          // Check if this space needs historical import (if we're doing all spaces)
+          if (!spaceId) {
+            const botStatus = await this.databaseService.getBotStatus(space.spaceId);
+            if (botStatus?.lastHistoricalImportAt) {
+              const lastImport = new Date(botStatus.lastHistoricalImportAt);
+              if (lastImport > oneDayAgo) {
+                console.log(`⏭️ Skipping ${space.name} - imported ${Math.round((Date.now() - lastImport.getTime()) / (1000 * 60 * 60))}h ago`);
+                continue;
+              }
+            }
+          }
+          
+          console.log(`\n📚 Importing historical data for: ${space.name} (${space.spaceId})`);
+          
+          // Get all historical proposals
+          const proposals = await this.snapshotService.getAllHistoricalProposals(space.spaceId);
+          
+          if (proposals.length === 0) {
+            console.log(`No proposals found for space ${space.spaceId}`);
+            // Still update the timestamp even if no proposals found
+            await this.databaseService.updateBotStatus(space.spaceId, {
+              lastHistoricalImportAt: now
+            });
+            continue;
+          }
+          
+          // Batch import to database
+          const results = await this.databaseService.batchCreateProposals(space.spaceId, proposals);
+          
+          // Update totals
+          totalResults.created += results.created;
+          totalResults.updated += results.updated;
+          totalResults.skipped += results.skipped;
+          totalResults.spaces++;
+          
+          // Update bot status with successful import time
+          await this.databaseService.updateBotStatus(space.spaceId, {
+            lastHistoricalImportAt: now
+          });
+          
+          console.log(`✅ Imported ${results.created} new proposals for ${space.name}`);
+          
+        } catch (error) {
+          console.error(`❌ Error importing historical data for ${space.spaceId}:`, error);
+          totalResults.skipped++;
+        }
+      }
+      
+      console.log(`\n📊 Historical import complete:`);
+      console.log(`  Spaces processed: ${totalResults.spaces}/${spaces.length}`);
+      console.log(`  Created: ${totalResults.created}`);
+      console.log(`  Updated: ${totalResults.updated}`);
+      console.log(`  Skipped: ${totalResults.skipped}`);
+      
+      return totalResults;
+      
+    } catch (error) {
+      console.error('❌ Error during historical data import:', error);
+      throw error;
+    }
+  }
+
   private async updateBotStatus(spaceId: string, errorMessage?: string): Promise<void> {
     try {
       const status = await this.databaseService.getBotStatus(spaceId);

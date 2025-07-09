@@ -48,6 +48,28 @@ function setupScheduledTasks(bot: BioDAOBot, config: any) {
     await bot.checkActiveProposals();
   });
   
+  // Daily historical data import at 2 AM UTC
+  cron.schedule('0 2 * * *', async () => {
+    console.log(`\n📚 Daily historical data import check at ${new Date().toISOString()}`);
+    try {
+      const shouldRun = await bot.shouldRunHistoricalImport();
+      
+      if (shouldRun) {
+        console.log('🔄 Running historical data import...');
+        const results = await bot.importHistoricalData();
+        console.log(`✅ Daily historical import completed:`);
+        console.log(`  Spaces processed: ${results.spaces}`);
+        console.log(`  Created: ${results.created}`);
+        console.log(`  Updated: ${results.updated}`);
+        console.log(`  Skipped: ${results.skipped}`);
+      } else {
+        console.log('⏭️ Skipping historical import - all spaces recently imported');
+      }
+    } catch (error) {
+      console.error('❌ Daily historical import failed:', error);
+    }
+  });
+  
   // Perform maintenance every 6 hours
   cron.schedule('0 */6 * * *', async () => {
     console.log(`\n🧹 Maintenance check at ${new Date().toISOString()}`);
@@ -66,6 +88,7 @@ function setupScheduledTasks(bot: BioDAOBot, config: any) {
   console.log('📅 Scheduled tasks configured:');
   console.log(`  - New proposals check: every ${config.checkIntervalMinutes} minutes`);
   console.log('  - Active proposals check: every hour');
+  console.log('  - Daily historical import check: 2 AM UTC (only if needed)');
   console.log('  - Maintenance: every 6 hours');
   console.log('  - Status report: every 30 minutes');
 }

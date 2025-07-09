@@ -113,6 +113,7 @@ export interface BotStatus {
   id: string;
   spaceId: string;
   lastCheckAt: string;
+  lastHistoricalImportAt?: string;
   lastProposalId?: string;
   status: 'running' | 'paused' | 'error';
   errorMessage?: string;
