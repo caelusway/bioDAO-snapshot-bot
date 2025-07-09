@@ -1,0 +1,31 @@
+{
+  "name": "biodao-snapshot-bot",
+  "version": "1.0.0",
+  "description": "Twitter bot for bioDAO Snapshot governance proposals",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "watch": "tsc -w",
+    "debug-snapshot": "ts-node src/debug-snapshot.ts",
+    "test-database": "ts-node src/test-database.ts",
+    "verify-anon-access": "ts-node src/verify-anon-access.ts"
+  },
+  "keywords": ["twitter", "bot", "snapshot", "governance", "biodao"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/node-cron": "^3.0.11",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "dotenv": "^16.3.1",
+    "node-cron": "^3.0.3",
+    "twitter-api-v2": "^1.15.0",
+    "@supabase/supabase-js": "^2.39.0"
+  }
+} 
