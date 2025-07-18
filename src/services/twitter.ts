@@ -30,12 +30,32 @@ export class TwitterService {
   }
 
   createProposalTweet(proposal: SnapshotProposal, spaceName?: string): string {
-    const title = this.truncateTitle(proposal.title, 80);
+    // Twitter Blue accounts have 10,000 character limit
+    // Always include spaceTag - never truncate it
+    // Only truncate title if necessary to fit within limit
     const stateEmoji = this.getStateEmoji(proposal.state);
     const voteText = this.getVoteText(proposal);
     const spaceTag = spaceName ? ` ${spaceName}` : '';
     
-    // Simple tweet format
+    // Calculate fixed content length (everything except title)
+    const fixedContent = `${stateEmoji} New Governance Proposal${spaceTag}
+
+✨ ${proposal.title}
+
+${voteText}
+
+🗳️ Vote: ${proposal.link}
+
+#DAO #DeSci #Vote`;
+
+    // Twitter Blue allows 10,000 characters
+    const maxLength = 1000;
+    const availableForTitle = maxLength - fixedContent.length;
+    
+    // Only truncate title if it exceeds available space
+    const title = this.truncateTitle(proposal.title, availableForTitle);
+    
+    // Create final tweet
     const tweet = `${stateEmoji} New Governance Proposal${spaceTag}
 
 ✨ ${title}
@@ -46,31 +66,17 @@ ${voteText}
 
 #DAO #DeSci #Vote`;
 
-    // Ensure tweet is under 280 characters
-    if (tweet.length > 280) {
-      return this.createShorterTweet(proposal, title, spaceName);
-    }
-
     return tweet;
   }
 
-  private createShorterTweet(proposal: SnapshotProposal, title: string, spaceName?: string): string {
-    const shortenedTitle = this.truncateTitle(proposal.title, 70);
-    const stateEmoji = this.getStateEmoji(proposal.state);
-    const spaceTag = spaceName ? ` ${spaceName}` : '';
-    
-    return `${stateEmoji} New Governance Proposal${spaceTag}
 
-✨ ${shortenedTitle}
-
-🗳️ Vote: ${proposal.link}
-
-#DAO #DeSci #Vote`;
-  }
 
   private truncateTitle(title: string, maxLength: number): string {
+    // Only truncate if title exceeds available space
     if (title.length <= maxLength) return title;
-    return title.substring(0, maxLength - 3) + '...';
+    // Ensure we don't truncate to negative length
+    const safeLength = Math.max(0, maxLength - 3);
+    return title.substring(0, safeLength) + '...';
   }
 
 
@@ -111,7 +117,8 @@ ${voteText}
   async checkRateLimit(): Promise<{ remaining: number; reset: number }> {
     try {
       // For v2 API, we'll rely on the queue delay system rather than checking rate limits
-      // Twitter v2 API allows 300 tweets per 15 minutes for free tier
+      // Twitter v2 API allows 300 tweets per 15 minutes for Twitter Blue accounts
+      // With 10,000 character limit available for Blue subscribers
       return {
         remaining: 300, // Assume we have remaining tweets
         reset: Date.now() + 900000 // 15 minutes from now
